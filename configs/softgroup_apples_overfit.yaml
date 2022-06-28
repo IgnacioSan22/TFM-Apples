@@ -76,5 +76,5 @@ step_epoch: 0
 save_freq: 10
 # pretrain: ''
 # pretrain: './work_dirs/semantic_new/80_IoU_ptrHais_data5mm_repeat10_radius0005_lr005_adam_scale100_shp64_256/epoch_24.pth'
-pretrain: 'work_dirs/semantic_final/ptrHais_repeat6_radius0005_lr005_adam_scale100_shp64_256/best_epoch_18.pth'
-work_dir: 'work_dirs/instance_new/auxFreeze'
+pretrain: 'work_dirs/semantic/best_74IoU.pth'
+work_dir: 'work_dirs/instance/auxFreeze'

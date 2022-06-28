@@ -61,9 +61,9 @@ class SoftGroup(nn.Module):
         if not semantic_only:
             self.tiny_unet = UBlock([channels, 2 * channels], norm_fn, 2, block, indice_key_id=11)
             self.tiny_unet_outputlayer = spconv.SparseSequential(norm_fn(channels), nn.ReLU())
-            self.cls_linear = nn.Linear(channels, instance_classes) # + 1
-            self.mask_linear = MLP(channels, instance_classes, norm_fn=None, num_layers=2) # + 1
-            self.iou_score_linear = nn.Linear(channels, instance_classes) # + 1
+            self.cls_linear = nn.Linear(channels, instance_classes + 1) # + 1
+            self.mask_linear = MLP(channels, instance_classes + 1, norm_fn=None, num_layers=2) # + 1
+            self.iou_score_linear = nn.Linear(channels, instance_classes + 1) # + 1
             # self.size_regression = MLP(12, 1, num_layers=3)
 
         self.init_weights()
@@ -123,7 +123,7 @@ class SoftGroup(nn.Module):
                                                                     batch_idxs, coords_float,
                                                                     self.grouping_cfg)
             # print('count proposals', torch.unique(proposals_idx, return_counts=True))
-            proposals_idx, proposals_offset = self.best_proposals(proposals_idx, proposals_offset)
+            # proposals_idx, proposals_offset = self.best_proposals(proposals_idx, proposals_offset)
             if proposals_offset.shape[0] > self.train_cfg.max_proposal_num:
                 proposals_offset = proposals_offset[:self.train_cfg.max_proposal_num + 1]
                 proposals_idx = proposals_idx[:proposals_offset[-1]]
@@ -185,7 +185,7 @@ class SoftGroup(nn.Module):
         pos_gt_inds = gt_inds[pos_inds]
 
         # compute cls loss. follow detection convention: 0 -> K - 1 are fg, K is bg
-        labels = fg_instance_cls.new_full((fg_ious_on_cluster.size(0), ), self.instance_classes - 1)
+        labels = fg_instance_cls.new_full((fg_ious_on_cluster.size(0), ), self.instance_classes)
         labels[pos_inds] = fg_instance_cls[pos_gt_inds]
         # print(torch.unique(labels), labels, cls_scores)
         cls_loss = F.cross_entropy(cls_scores, labels)
@@ -256,7 +256,7 @@ class SoftGroup(nn.Module):
             proposals_idx, proposals_offset = self.forward_grouping(semantic_scores, pt_offsets,
                                                                     batch_idxs, coords_float,
                                                                     self.grouping_cfg)
-            proposals_idx, proposals_offset = self.best_proposals(proposals_idx, proposals_offset)
+            # proposals_idx, proposals_offset = self.best_proposals(proposals_idx, proposals_offset)
             inst_feats, inst_map = self.clusters_voxelization(proposals_idx, proposals_offset,
                                                               output_feats, coords_float,
                                                               **self.instance_voxel_cfg)
