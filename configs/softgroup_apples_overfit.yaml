@@ -1,0 +1,80 @@
+model:
+  channels: 32
+  num_blocks: 7
+  semantic_classes: 2
+  instance_classes: 2
+  sem2ins_classes: [0]
+  semantic_only: False
+  ignore_label: -99
+  grouping_cfg:
+    score_thr: 0.1
+    radius: 0.01
+    mean_active: 200
+    class_numpoint_mean: [-1., 8022.]
+    npoint_thr: 0.1  # absolute if class_numpoint == -1, relative if class_numpoint != -1
+    ignore_classes: []
+  instance_voxel_cfg:
+    scale: 50
+    spatial_shape: 8
+  train_cfg:
+    max_proposal_num: 1000
+    pos_iou_thr: 0.5
+  test_cfg:
+    x4_split: True
+    cls_score_thr: 0.001
+    mask_score_thr: -0.5
+    min_npoint: 500
+  fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
+  # fixed_modules: []
+
+data:
+  train:
+    type: 'apples'
+    data_root: 'dataset/applesTFM/train_overfit'
+    prefix: 'tree'
+    suffix: '_segmented.las'
+    repeat: 6
+    training: True
+    voxel_cfg:
+      scale: 200
+      spatial_shape: [64, 256]
+      max_npoint: 200000
+      min_npoint: 3000
+  test:
+    type: 'apples'
+    data_root: 'dataset/applesTFM/test'
+    prefix: 'tree'
+    suffix: '_segmented.las'
+    training: False
+    voxel_cfg:
+      scale: 200
+      spatial_shape: [64, 256]
+      max_npoint: 200000
+      min_npoint: 3000
+
+
+dataloader:
+  train:
+    batch_size: 3
+    num_workers: 1
+  test:
+    batch_size: 1
+    num_workers: 1
+
+optimizer:
+  type: 'Adam'
+  lr: 0.05
+
+save_cfg:
+  semantic: False
+  offset: False
+  instance: True
+
+fp16: False
+epochs: 20
+step_epoch: 0
+save_freq: 10
+# pretrain: ''
+# pretrain: './work_dirs/semantic_new/80_IoU_ptrHais_data5mm_repeat10_radius0005_lr005_adam_scale100_shp64_256/epoch_24.pth'
+pretrain: 'work_dirs/semantic_final/ptrHais_repeat6_radius0005_lr005_adam_scale100_shp64_256/best_epoch_18.pth'
+work_dir: 'work_dirs/instance_new/auxFreeze'

@@ -1,0 +1,9 @@
+#!/bin/bash
+#SBATCH -p gpi.compute             # Partition to submit to
+#SBATCH --mem=32G      # Max CPU Memory
+#SBATCH --gres=gpu:1
+#SBATCH -w gpic10
+#SBATCH --time=1400
+#SBATCH -o jobs/%x_%u_%j.out # File to which STDOUT will be written
+#SBATCH -e jobs/%x_%u_%j.err # File to which STDERR will be written
+tools/dist_train.sh  configs/softgroup_apples_overfit.yaml 1
