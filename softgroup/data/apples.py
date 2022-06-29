@@ -1,6 +1,7 @@
 import os.path as osp
 import os
 from glob import glob
+import sys
 
 import numpy as np
 import torch
@@ -64,7 +65,9 @@ class ApplesDataSet(CustomDataset):
             xyz = xyz[inds]
             rgb = rgb[inds]
             semantic_label = semantic_label[inds]
+            # print('pre',np.unique(instance_label[inds]))
             instance_label = self.getCroppedInstLabel(instance_label, inds)
+            # print('post',np.unique(instance_label))
         return xyz, rgb, semantic_label, instance_label
 
     def crop(self, xyz, step=0.5):
@@ -121,7 +124,7 @@ class ApplesDataSet(CustomDataset):
         pt_offset_labels = pt_offset_label.float()
         spatial_shape = np.clip((coords.max(0)[0][1:] + 1).numpy(), self.voxel_cfg.spatial_shape[0],
                                 None)
-        voxel_coords, v2p_map, p2v_map = voxelization_idx(coords, 4)
+        voxel_coords, v2p_map, p2v_map = voxelization_idx(coords, 1)
         return {
             'scan_ids': scan_ids,
             'batch_idxs': batch_idxs,
@@ -136,5 +139,5 @@ class ApplesDataSet(CustomDataset):
             'instance_cls': instance_cls,
             'pt_offset_labels': pt_offset_labels,
             'spatial_shape': spatial_shape,
-            'batch_size': 4
+            'batch_size': 1
         }

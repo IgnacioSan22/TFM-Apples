@@ -17,7 +17,7 @@ model:
     scale: 50
     spatial_shape: 20
   train_cfg:
-    max_proposal_num: 200
+    max_proposal_num: 500
     pos_iou_thr: 0.4
   test_cfg:
     x4_split: True
@@ -35,7 +35,7 @@ data:
     repeat: 8
     training: True
     voxel_cfg:
-      scale: 50
+      scale: 100
       spatial_shape: [128, 512]
       max_npoint: 300000
       min_npoint: 2000
@@ -46,7 +46,7 @@ data:
     suffix: '_segmented.las'
     training: False
     voxel_cfg:
-      scale: 50
+      scale: 100
       spatial_shape: [128, 512]
       max_npoint: 300000
       min_npoint: 2000
@@ -62,7 +62,7 @@ dataloader:
 
 optimizer:
   type: 'Adam'
-  lr: 0.004
+  lr: 0.01
 
 save_cfg:
   semantic: True
@@ -76,4 +76,4 @@ save_freq: 10
 # pretrain: ''
 pretrain: './hais_ckpt_spconv2.pth'
 # pretrain: './work_dirs/semantic_new/80_IoU_ptrHais_data5mm_repeat10_radius0005_lr005_adam_scale100_shp64_256/epoch_24.pth'
-work_dir: 'work_dirs/semantic_final/ptrHais_03tree_repeat8_lr0004_Adam_scale50_shp128_512'
+work_dir: 'work_dirs/semantic_final/ptrHais_03tree_repeat8_lr0004_Adam_scale100_shp128_512_augColor'

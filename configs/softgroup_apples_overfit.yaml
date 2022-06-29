@@ -9,23 +9,23 @@ model:
   grouping_cfg:
     score_thr: 0.1
     radius: 0.01
-    mean_active: 200
-    class_numpoint_mean: [-1., 8022.]
+    mean_active: 300
+    class_numpoint_mean: [-1., 4022.]
     npoint_thr: 0.1  # absolute if class_numpoint == -1, relative if class_numpoint != -1
     ignore_classes: []
   instance_voxel_cfg:
-    scale: 50
-    spatial_shape: 8
+    scale: 30
+    spatial_shape: 20
   train_cfg:
-    max_proposal_num: 1000
+    max_proposal_num: 500
     pos_iou_thr: 0.5
   test_cfg:
     x4_split: True
     cls_score_thr: 0.001
     mask_score_thr: -0.5
     min_npoint: 500
-  fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
-  # fixed_modules: []
+  # fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
+  fixed_modules: []
 
 data:
   train:
@@ -63,7 +63,7 @@ dataloader:
 
 optimizer:
   type: 'Adam'
-  lr: 0.05
+  lr: 0.01
 
 save_cfg:
   semantic: False
@@ -77,4 +77,4 @@ save_freq: 10
 # pretrain: ''
 # pretrain: './work_dirs/semantic_new/80_IoU_ptrHais_data5mm_repeat10_radius0005_lr005_adam_scale100_shp64_256/epoch_24.pth'
 pretrain: 'work_dirs/semantic/best_74IoU.pth'
-work_dir: 'work_dirs/instance/auxFreeze'
+work_dir: 'work_dirs/instance/aux74Iou_rad001_30_20'

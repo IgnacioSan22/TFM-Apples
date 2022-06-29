@@ -5,25 +5,25 @@ model:
   instance_classes: 2
   sem2ins_classes: [0]
   semantic_only: False
-  ignore_label: 0
+  ignore_label: -100
   grouping_cfg:
     score_thr: 0.1
     radius: 0.01
-    mean_active: 200
+    mean_active: 100
     class_numpoint_mean: [-1., 4000.]
     npoint_thr: 0.1  # absolute if class_numpoint == -1, relative if class_numpoint != -1
-    ignore_classes: [0]
+    ignore_classes: []
   instance_voxel_cfg:
     scale: 50
     spatial_shape: 10
   train_cfg:
-    max_proposal_num: 200
+    max_proposal_num: 500
     pos_iou_thr: 0.5
   test_cfg:
     x4_split: True
     cls_score_thr: 0.001
     mask_score_thr: -0.5
-    min_npoint: 500
+    min_npoint: 300
   # fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
   fixed_modules: []
 
@@ -76,6 +76,6 @@ step_epoch: 0
 save_freq: 10
 pretrain: ''
 # pretrain: './hais_ckpt_spconv2.pth'
-# pretrain: 'work_dirs/semantic_final/ptrHais_repeat6_radius0005_lr005_adam_scale100_shp64_256/best_epoch_18.pth'
+pretrain: 'work_dirs/semantic/best_74IoU.pth'
 # work_dir: 'work_dirs/instance_new/aux'
-work_dir: 'work_dirs/instance_final/noPtr_ignoretree_2outs_proposalClean_200prop_radius001_lr001_Adam_scale200_shp64_256_sclInst50_shapeIns10'
+work_dir: 'work_dirs/instance/Ptr74_3outs_test1size_best200prop_radius001_lr001_Adam_scale200_shp64_256_sclInst50_shapeIns10'

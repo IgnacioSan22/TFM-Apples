@@ -191,8 +191,8 @@ class CustomDataset(Dataset):
         coord = torch.from_numpy(xyz).long()
         coord_float = torch.from_numpy(xyz_middle)
         feat = torch.from_numpy(rgb).float()
-        # if self.training:
-        #     feat += torch.randn(3) * 0.1
+        if self.training:
+            feat += torch.randn(3) * 0.1
         semantic_label = torch.from_numpy(semantic_label)
         instance_label = torch.from_numpy(instance_label)
         pt_offset_label = torch.from_numpy(pt_offset_label)

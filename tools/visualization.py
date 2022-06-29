@@ -227,7 +227,7 @@ def get_coords_color(opt):
             i = sort_inds[i_]
             mask_path = os.path.join(opt.prediction_path, 'pred_instance', masks[i][0])
             assert os.path.isfile(mask_path), mask_path
-            if (float(masks[i][2]) <= 0.0):
+            if (float(masks[i][2]) < 0.0):
                 continue
             mask = np.loadtxt(mask_path).astype(np.int)
             if opt.dataset == 'scannet':
@@ -302,10 +302,10 @@ if __name__ == '__main__':
     parser.add_argument(
         '--prediction_path',
         help='path to the prediction results',
-        default='./prediction/instance_42/')
+        default='./prediction/instance_238/')
     parser.add_argument(
         '--data_split', help='train/val/test for scannet or Area_ID for s3dis', default='test')
-    parser.add_argument('--room_name', help='segment', default='tree01_middle_labelled_near')
+    parser.add_argument('--room_name', help='segment', default='tree01_top_labelled_jd')
     parser.add_argument(
         '--task',
         help='input/semantic_gt/semantic_pred/offset_semantic_pred/instance_gt/instance_pred',

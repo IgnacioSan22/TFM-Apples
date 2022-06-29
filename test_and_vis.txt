@@ -1,0 +1,3 @@
+srun --mem=16G --gres=gpu:1  -p gpi.develop --time=100  tools/dist_test.sh ./configs/softgroup_apples_semantic_only.yaml ./work_dirs/semantic/best_74IoU.pth prediction/semantic_74
+
+srun --mem=16G --gres=gpu:1  -p gpi.develop --time=100 tools/dist_visualization.sh

@@ -81,3 +81,5 @@ jobs*
 work_dirs/*
 dataset/applesTFM/*
 *.pth
+prediction/*
+instances/*
