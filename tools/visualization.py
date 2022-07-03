@@ -302,10 +302,10 @@ if __name__ == '__main__':
     parser.add_argument(
         '--prediction_path',
         help='path to the prediction results',
-        default='./prediction/instance_238/')
+        default='./prediction/instance_88/')
     parser.add_argument(
         '--data_split', help='train/val/test for scannet or Area_ID for s3dis', default='test')
-    parser.add_argument('--room_name', help='segment', default='tree01_top_labelled_jd')
+    parser.add_argument('--room_name', help='segment', default='tree01_botom_labelled_jd')
     parser.add_argument(
         '--task',
         help='input/semantic_gt/semantic_pred/offset_semantic_pred/instance_gt/instance_pred',

@@ -222,7 +222,7 @@ class ScanNetEval(object):
             avg_dict['classes'][label_name]['rc25%'] = np.average(rcs[d_inf, li, o25])
         return avg_dict
 
-    def assign_instances_for_scan(self, preds, gts):
+    def assign_instances_for_scan(self, preds, gts, gt_sizes=None):
         """get gt instances, only consider the valid class labels even in class
         agnostic setting."""
         gt_instances = get_instances(gts, self.valid_class_ids, self.valid_class_labels,
@@ -280,6 +280,8 @@ class ScanNetEval(object):
             pred_instance['confidence'] = conf
             pred_instance['void_intersection'] = np.count_nonzero(
                 np.logical_and(bool_void, pred_mask))
+            if 'size' in pred:
+                pred_instance['size'] = pred['size']
 
             # matched gt instances
             matched_gt = []
@@ -291,6 +293,8 @@ class ScanNetEval(object):
                     gt_copy = gt_inst.copy()
                     pred_copy = pred_instance.copy()
                     gt_copy['intersection'] = intersection
+                    if gt_sizes is not None:
+                        gt_copy['szie'] = gt_sizes[gt_num]
                     pred_copy['intersection'] = intersection
                     iou = (
                         float(intersection) /
@@ -369,6 +373,39 @@ class ScanNetEval(object):
                 ap25 = avgs['classes'][class_name]['ap25%']
                 f.write(_SPLITTER.join([str(x) for x in [class_name, ap, ap50, ap25]]) + '\n')
 
+    def evaluateWithSize(self, pred_list, gt_list, gt_sizes=None):
+        """
+        Args:
+            pred_list:
+                for each scan:
+                    for each instance
+                        instance = dict(scan_id, label_id, mask, conf)
+            gt_list:
+                for each scan:
+                    for each point:
+                        gt_id = class_id * 1000 + instance_id
+            pred_size:  diameter value of the predicted instances in mm
+            gt_size:  diameter value of the GT instances in mm
+        """
+        pool = mp.Pool()
+        results = pool.starmap(self.assign_instances_for_scan, zip(pred_list, gt_list, gt_sizes))
+        pool.close()
+        pool.join()
+
+        matches = {}
+        for i, (gt2pred, pred2gt) in enumerate(results):
+            matches_key = f'gt_{i}'
+            matches[matches_key] = {}
+            matches[matches_key]['gt'] = gt2pred
+            matches[matches_key]['pred'] = pred2gt
+        ap_scores, rc_scores = self.evaluate_matches(matches)
+        avgs = self.compute_averages(ap_scores, rc_scores)
+
+        # print
+        self.print_results(avgs)
+        return avgs
+    
+    
     def evaluate(self, pred_list, gt_list):
         """
         Args:

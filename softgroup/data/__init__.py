@@ -4,8 +4,9 @@ from torch.utils.data.distributed import DistributedSampler
 from .s3dis import S3DISDataset
 from .scannetv2 import ScanNetDataset
 from .apples import ApplesDataSet
+from .applesSize import ApplesSizeDataSet
 
-__all__ = ['S3DISDataset', 'ScanNetDataset', 'ApplesDataSet', 'build_dataset']
+__all__ = ['S3DISDataset', 'ScanNetDataset', 'ApplesDataSet', 'ApplesSizeDataSet', 'build_dataset']
 
 
 def build_dataset(data_cfg, logger):
@@ -19,6 +20,8 @@ def build_dataset(data_cfg, logger):
         return ScanNetDataset(**_data_cfg)
     elif data_type == 'apples':
         return ApplesDataSet(**_data_cfg)
+    elif data_type == 'apples_size':
+        return ApplesSizeDataSet(**_data_cfg)
     else:
         raise ValueError(f'Unknown {data_type}')
 

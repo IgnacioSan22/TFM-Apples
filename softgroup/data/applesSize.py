@@ -15,10 +15,10 @@ class ApplesSizeDataSet(CustomDataset):
 
     CLASSES = ('tree', 'apple')
     
-    def __init__(self, data_root, prefix, suffix, voxel_cfg=None, training=True, repeat=1, logger=None, size_path=''):
+    def __init__(self, data_root, size_path, prefix, suffix, voxel_cfg=None, training=True, repeat=1, logger=None):
         super().__init__(data_root, prefix, suffix, voxel_cfg, training, repeat, logger)
         self.size_data = {}
-        if os.path.exists(size_path):
+        if os.path.isfile(size_path):
             file = open(size_path)
             csvreader = csv.reader(file,delimiter=';')
             header = next(csvreader)
@@ -30,7 +30,7 @@ class ApplesSizeDataSet(CustomDataset):
     def getCroppedInstLabel(self, instance_label, valid_idxs, instance_sizes):
         instance_label = instance_label[valid_idxs]
         j = 0
-        new_instance_sizes = (instance_label.copy())
+        new_instance_sizes = (instance_sizes.copy())
         while (j < instance_label.max()):
             if (len(np.where(instance_label == j)[0]) == 0):
                 new_instance_sizes[new_instance_sizes[:,0] == instance_label.max(),0] = j
@@ -128,7 +128,7 @@ class ApplesSizeDataSet(CustomDataset):
         semantic_label = np.concatenate(semantic_label_list, 0)
         instance_label = np.concatenate(instance_label_list, 0)
         valid_idxs = np.ones(xyz.shape[0], dtype=bool)
-        instance_label = self.getCroppedInstLabel(instance_label, valid_idxs)  # TODO remove this
+        instance_label, instace_sizes = self.getCroppedInstLabel(instance_label, valid_idxs, instace_sizes)  # TODO remove this
         return xyz, xyz_middle, rgb, semantic_label, instance_label, instace_sizes
 
     def transform_train(self, xyz, rgb, semantic_label, instance_label, instance_sizes, aug_prob=0.25):
@@ -155,7 +155,7 @@ class ApplesSizeDataSet(CustomDataset):
         xyz_middle = xyz_middle[valid_idxs]
         rgb = rgb[valid_idxs]
         semantic_label = semantic_label[valid_idxs]
-        instance_label = self.getCroppedInstLabel(instance_label, valid_idxs, instance_sizes)
+        instance_label, instance_sizes = self.getCroppedInstLabel(instance_label, valid_idxs, instance_sizes)
         # print('Transform train:',xyz.shape, xyz_middle.shape, rgb.shape, semantic_label.shape, instance_label.shape)
         return xyz, xyz_middle, rgb, semantic_label, instance_label, instance_sizes
 

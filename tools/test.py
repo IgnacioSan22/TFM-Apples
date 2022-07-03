@@ -117,6 +117,8 @@ def main():
             if not cfg.model.semantic_only:
                 pred_insts.append(res['pred_instances'])
                 gt_insts.append(res['gt_instances'])
+                print(np.shape(pred_insts[0]))
+                print(gt_insts[0][0].keys())
         if args.eval:
             logger.info('Evaluate semantic segmentation and offset MAE')
             ignore_label = cfg.model.ignore_label

@@ -22,6 +22,7 @@ class SoftGroup(nn.Module):
                  semantic_classes=2,
                  instance_classes=2,
                  sem2ins_classes=[],
+                 semantic_weight=None,
                  ignore_label=-100,
                  grouping_cfg=None,
                  instance_voxel_cfg=None,
@@ -35,6 +36,7 @@ class SoftGroup(nn.Module):
         self.semantic_classes = semantic_classes
         self.instance_classes = instance_classes
         self.sem2ins_classes = sem2ins_classes
+        self.semantic_weight = semantic_weight
         self.ignore_label = ignore_label
         self.grouping_cfg = grouping_cfg
         self.instance_voxel_cfg = instance_voxel_cfg
@@ -61,10 +63,9 @@ class SoftGroup(nn.Module):
         if not semantic_only:
             self.tiny_unet = UBlock([channels, 2 * channels], norm_fn, 2, block, indice_key_id=11)
             self.tiny_unet_outputlayer = spconv.SparseSequential(norm_fn(channels), nn.ReLU())
-            self.cls_linear = nn.Linear(channels, instance_classes + 1) # + 1
-            self.mask_linear = MLP(channels, instance_classes + 1, norm_fn=None, num_layers=2) # + 1
-            self.iou_score_linear = nn.Linear(channels, instance_classes + 1) # + 1
-            # self.size_regression = MLP(12, 1, num_layers=3)
+            self.cls_linear = nn.Linear(channels, instance_classes) # + 1
+            self.mask_linear = MLP(channels, instance_classes, norm_fn=None, num_layers=2) # + 1
+            self.iou_score_linear = nn.Linear(channels, instance_classes) # + 1
 
         self.init_weights()
 
@@ -123,7 +124,7 @@ class SoftGroup(nn.Module):
                                                                     batch_idxs, coords_float,
                                                                     self.grouping_cfg)
             # print('count proposals', torch.unique(proposals_idx, return_counts=True))
-            # proposals_idx, proposals_offset = self.best_proposals(proposals_idx, proposals_offset)
+            proposals_idx, proposals_offset = self.best_proposals(proposals_idx, proposals_offset)
             if proposals_offset.shape[0] > self.train_cfg.max_proposal_num:
                 proposals_offset = proposals_offset[:self.train_cfg.max_proposal_num + 1]
                 proposals_idx = proposals_idx[:proposals_offset[-1]]
@@ -150,8 +151,14 @@ class SoftGroup(nn.Module):
                         pt_offset_labels):
         losses = {}
         # weight=torch.from_numpy(np.array([0.7, 0.3], dtype=np.float32)).cuda(), 
+        if self.semantic_weight:
+            weight = torch.tensor(self.semantic_weight, dtype=torch.float, device='cuda')
+        else:
+            weight = None
         semantic_loss = F.cross_entropy(
-            semantic_scores, semantic_labels, ignore_index=self.ignore_label)
+            semantic_scores, semantic_labels, weight=weight, ignore_index=self.ignore_label)
+        # semantic_loss = F.cross_entropy(
+        #     semantic_scores, semantic_labels, ignore_index=self.ignore_label)
         losses['semantic_loss'] = semantic_loss
 
         pos_inds = instance_labels != self.ignore_label
@@ -167,6 +174,7 @@ class SoftGroup(nn.Module):
     def instance_loss(self, cls_scores, mask_scores, iou_scores, proposals_idx, proposals_offset,
                       instance_labels, instance_pointnum, instance_cls, instance_batch_idxs):
         losses = {}
+        proposals = proposals_idx[:, 0]
         proposals_idx = proposals_idx[:, 1].cuda()
         proposals_offset = proposals_offset.cuda()
 
@@ -179,15 +187,32 @@ class SoftGroup(nn.Module):
         fg_instance_cls = instance_cls[fg_inds]
         fg_ious_on_cluster = ious_on_cluster[:, fg_inds]
 
+        # assign proposal to gt idx. -1: negative, 0 -> num_gts - 1: positive
+        num_proposals = fg_ious_on_cluster.size(0)
+        num_gts = fg_ious_on_cluster.size(1)
+        assigned_gt_inds = fg_ious_on_cluster.new_full((num_proposals, ), -1, dtype=torch.long)
+
         # overlap > thr on fg instances are positive samples
-        max_iou, gt_inds = fg_ious_on_cluster.max(1)
+        max_iou, argmax_iou = fg_ious_on_cluster.max(1)
         pos_inds = max_iou >= self.train_cfg.pos_iou_thr
-        pos_gt_inds = gt_inds[pos_inds]
+        assigned_gt_inds[pos_inds] = argmax_iou[pos_inds]
+        print('unique prop inds', torch.unique(proposals, return_counts=True))
+        print('Assigned GT inds',assigned_gt_inds, assigned_gt_inds.shape)
+
+        # allow low-quality proposals with best iou to be as positive sample
+        # in case pos_iou_thr is too high to achieve
+        match_low_quality = getattr(self.train_cfg, 'match_low_quality', False)
+        min_pos_thr = getattr(self.train_cfg, 'min_pos_thr', 0)
+        if match_low_quality:
+            gt_max_iou, gt_argmax_iou = fg_ious_on_cluster.max(0)
+            for i in range(num_gts):
+                if gt_max_iou[i] >= min_pos_thr:
+                    assigned_gt_inds[gt_argmax_iou[i]] = i
 
         # compute cls loss. follow detection convention: 0 -> K - 1 are fg, K is bg
-        labels = fg_instance_cls.new_full((fg_ious_on_cluster.size(0), ), self.instance_classes)
-        labels[pos_inds] = fg_instance_cls[pos_gt_inds]
-        # print(torch.unique(labels), labels, cls_scores)
+        labels = fg_instance_cls.new_full((num_proposals, ), self.instance_classes - 1)
+        pos_inds = assigned_gt_inds >= 0
+        labels[pos_inds] = fg_instance_cls[assigned_gt_inds[pos_inds]]
         cls_loss = F.cross_entropy(cls_scores, labels)
         losses['cls_loss'] = cls_loss
 
@@ -343,9 +368,9 @@ class SoftGroup(nn.Module):
             coords_ = coords_float[object_idxs]
             pt_offsets_ = pt_offsets[object_idxs]
             idx, start_len = ballquery_batch_p(coords_ + pt_offsets_, batch_idxs_, batch_offsets_,
-                                               radius, mean_active)
+                                            radius, mean_active)
             proposals_idx, proposals_offset = bfs_cluster(class_numpoint_mean, idx.cpu(),
-                                                          start_len.cpu(), npoint_thr, class_id)
+                                                        start_len.cpu(), npoint_thr, class_id)
             proposals_idx[:, 1] = object_idxs[proposals_idx[:, 1].long()].int()
             # print('Class id', class_id,torch.unique(proposals_idx[:,0], return_counts=True))
             # merge proposals
@@ -411,16 +436,6 @@ class SoftGroup(nn.Module):
                 cur_proposals_idx = cur_proposals_idx[remove_instances[:,0]]
                 new_labels = np.concatenate([[ind]*preserve[ind] for ind in range(len(preserve))]).ravel()
                 cur_proposals_idx[:,0] = torch.from_numpy(new_labels).long()
-                # id = 0
-                # for ind, instance_id in enumerate(uniques):
-                #     if count[ind] < self.test_cfg.min_npoint:
-                #         inds_to_save = cur_proposals_idx[:,0] != instance_id
-                #         cur_proposals_idx = cur_proposals_idx[inds_to_save]
-                #     else:
-                #         inds_to_save = cur_proposals_idx[:,0] == instance_id
-                #         cur_proposals_idx[inds_to_save,0] = id
-                #         id += 1
-                
                     
                 inds_valid = count >= self.test_cfg.min_npoint
                 cls_pred = cls_pred[inds_valid]
@@ -434,15 +449,8 @@ class SoftGroup(nn.Module):
                 inds = cur_cls_scores > self.test_cfg.cls_score_thr
                 cls_pred = cls_pred[inds]
                 score_pred = score_pred[inds]
-                # cur_proposals_idx = cur_proposals_idx[inds,:]
                 mask_pred = mask_pred[inds]
-                # filter too small instances
-                # npoint = cur_proposals_idx.sum(1)
-                # inds = npoint >= self.test_cfg.min_npoint
-                # cls_pred = cls_pred[inds]
-                # score_pred = score_pred[inds]
-                # inds_cur_prop = cur_proposals_idx[:,0] 
-                # mask_pred = mask_pred[inds]
+
             cls_pred_list.append(cls_pred)
             score_pred_list.append(score_pred)
             mask_pred_list.append(mask_pred)

@@ -8,14 +8,14 @@ model:
   ignore_label: -100
   grouping_cfg:
     score_thr: 0.1
-    radius: 0.01
-    mean_active: 100
-    class_numpoint_mean: [-1., 4000.]
+    radius: 0.004
+    mean_active: 60
+    class_numpoint_mean: [-1., -1.]
     npoint_thr: 0.1  # absolute if class_numpoint == -1, relative if class_numpoint != -1
-    ignore_classes: []
+    ignore_classes: [0]
   instance_voxel_cfg:
     scale: 50
-    spatial_shape: 10
+    spatial_shape: 7
   train_cfg:
     max_proposal_num: 500
     pos_iou_thr: 0.5
@@ -24,8 +24,8 @@ model:
     cls_score_thr: 0.001
     mask_score_thr: -0.5
     min_npoint: 300
-  # fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
-  fixed_modules: []
+  fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
+  # fixed_modules: []
 
 data:
   train:
@@ -63,7 +63,7 @@ dataloader:
 
 optimizer:
   type: 'Adam'
-  lr: 0.01
+  lr: 0.005
 
 save_cfg:
   semantic: False
@@ -76,6 +76,6 @@ step_epoch: 0
 save_freq: 10
 pretrain: ''
 # pretrain: './hais_ckpt_spconv2.pth'
-pretrain: 'work_dirs/semantic/best_74IoU.pth'
+pretrain: './work_dirs/semantic_final/ptrHais_03tree_repeat8_lr0004_Adam_scale200_shp64_256/best_model.pth'
 # work_dir: 'work_dirs/instance_new/aux'
-work_dir: 'work_dirs/instance/Ptr74_3outs_test1size_best200prop_radius001_lr001_Adam_scale200_shp64_256_sclInst50_shapeIns10'
+work_dir: 'work_dirs/instance/FrzPtr77_2outs_radius0004_lr0005_Adagrad_sclInst50_shapeIns7'
