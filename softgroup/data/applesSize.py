@@ -75,7 +75,12 @@ class ApplesSizeDataSet(CustomDataset):
                 instance_label = (las.points['Scalar_field'].astype(np.int32).copy())
                 semantic_label = np.zeros(instance_label.shape, dtype=np.int)
                 semantic_label[instance_label > 0] = 1
-                instance_sizes = np.array([[key,self.size_data[key]] for key in np.unique(instance_label)])
+                instance_sizes = []
+                for key in np.unique(instance_label):
+                    if key in self.size_data:
+                        instance_sizes.append([key,self.size_data[key]])
+                instance_sizes = np.array(instance_sizes)
+                # instance_sizes = np.array([[key,self.size_data[key]]for key in np.unique(instance_label)])
                 # instance_label[np.isnan(instance_label)] = 0
             else:
                 semantic_label = np.zeros(R.shape)
@@ -93,7 +98,6 @@ class ApplesSizeDataSet(CustomDataset):
             semantic_label = semantic_label[inds]
             
             instance_label, instance_sizes = self.getCroppedInstLabel(instance_label, inds, instance_sizes)
-            
         return xyz, rgb, semantic_label, instance_label, instance_sizes
 
     def crop(self, xyz, step=0.5):

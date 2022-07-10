@@ -196,9 +196,7 @@ class SoftGroup(nn.Module):
         max_iou, argmax_iou = fg_ious_on_cluster.max(1)
         pos_inds = max_iou >= self.train_cfg.pos_iou_thr
         assigned_gt_inds[pos_inds] = argmax_iou[pos_inds]
-        print('unique prop inds', torch.unique(proposals, return_counts=True))
-        print('Assigned GT inds',assigned_gt_inds, assigned_gt_inds.shape)
-
+       
         # allow low-quality proposals with best iou to be as positive sample
         # in case pos_iou_thr is too high to achieve
         match_low_quality = getattr(self.train_cfg, 'match_low_quality', False)

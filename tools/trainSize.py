@@ -111,7 +111,7 @@ def validate(epoch, model, val_loader, cfg, logger, writer):
     results = []
     miou, ap = -1, -1
     all_sem_preds, all_sem_labels, all_offset_preds, all_offset_labels = [], [], [], []
-    all_inst_labels, all_pred_insts, all_gt_insts, all_pred_sizes, all_gt_sizes = [], [], [], [], []
+    all_inst_labels, all_pred_insts, all_gt_insts, all_gt_sizes, objsFile = [], [], [], [], [0]
     _, world_size = get_dist_info()
     progress_bar = tqdm(total=len(val_loader) * world_size, disable=not is_main_process())
     val_set = val_loader.dataset
@@ -119,12 +119,15 @@ def validate(epoch, model, val_loader, cfg, logger, writer):
         model.eval()
         for i, batch in enumerate(val_loader):
             result = model(batch)
+            objsFile.append(objsFile[i] + len(batch['instance_sizes']))
+            batch['instance_sizes'][:,0] += objsFile[i]
+            all_gt_sizes.extend(batch['instance_sizes'])
             results.append(result)
             progress_bar.update(world_size)
         progress_bar.close()
         results = collect_results_gpu(results, len(val_set))
     if is_main_process():
-        for res in results:
+        for i,res in enumerate(results):
             all_sem_preds.append(res['semantic_preds'])
             all_sem_labels.append(res['semantic_labels'])
             all_offset_preds.append(res['offset_preds'])
@@ -132,13 +135,12 @@ def validate(epoch, model, val_loader, cfg, logger, writer):
             all_inst_labels.append(res['instance_labels'])
             if not cfg.model.semantic_only:
                 all_pred_insts.append(res['pred_instances'])
-                all_gt_insts.append(res['gt_instances'])
-                all_pred_sizes.append(res['pred_sizes'])
-                all_gt_sizes.append(res['gt_sizes'])
+                # print(np.unique(res['gt_instances']))
+                all_gt_insts.append(res['gt_instances'] + objsFile[i])
         if not cfg.model.semantic_only:
             logger.info('Evaluate instance segmentation')
             scannet_eval = ScanNetEval(val_set.CLASSES)
-            eval_res = scannet_eval.evaluate(all_pred_insts, all_gt_insts)
+            eval_res = scannet_eval.evaluateWithSize(all_pred_insts, all_gt_insts, all_gt_sizes, ['apple'])
             # eval_res = scannet_eval.evaluate(all_pred_insts, all_gt_insts, all_gt_sizes)
             writer.add_scalar('val/AP', eval_res['all_ap'], epoch)
             writer.add_scalar('val/AP_50', eval_res['all_ap_50%'], epoch)

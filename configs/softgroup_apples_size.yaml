@@ -7,7 +7,7 @@ model:
   semantic_only: False
   ignore_label: -100
   grouping_cfg:
-    score_thr: 0.1
+    score_thr: 0.5
     radius: 0.004
     mean_active: 60
     class_numpoint_mean: [-1., -1.]
@@ -23,8 +23,10 @@ model:
     x4_split: True
     cls_score_thr: 0.001
     mask_score_thr: -0.5
-    min_npoint: 300
-  fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
+    min_npoint: 250
+  # fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
+  fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear',
+                  'tiny_unet', 'cls_linear', 'mask_linear', 'iou_score_linear']
   # fixed_modules: []
 
 data:
@@ -34,7 +36,7 @@ data:
     size_path: 'dataset/applesTFM/all_apples_train.csv'
     prefix: 'tree'
     suffix: '_segmented.las'
-    repeat: 4
+    repeat: 8
     training: True
     voxel_cfg:
       scale: 200
@@ -65,7 +67,7 @@ dataloader:
 
 optimizer:
   type: 'Adam'
-  lr: 0.005
+  lr: 0.01
 
 save_cfg:
   semantic: False
@@ -78,6 +80,6 @@ step_epoch: 0
 save_freq: 10
 pretrain: ''
 # pretrain: './hais_ckpt_spconv2.pth'
-pretrain: './work_dirs/instance/88AP_Ptr74_2outs_test1size_best500prop_radius0004_lr001_Adam_scale200_shp64_256_sclInst50_shapeIns7/best_model.pth'
+pretrain: './work_dirs/instance/FrzPtr77_2outs_radius0004_lr001_Adam_scr05_sclInst50_shapeIns7/best_model.pth'
 # work_dir: 'work_dirs/instance_new/aux'
-work_dir: 'work_dirs/size/aux'
+work_dir: 'work_dirs/size/freezeall_inst_50_7_scr05_NonormFn_redmean_l1loss_Adam001'

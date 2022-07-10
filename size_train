@@ -6,4 +6,4 @@
 #SBATCH --time=1400
 #SBATCH -o jobs/%x_%u_%j.out # File to which STDOUT will be written
 #SBATCH -e jobs/%x_%u_%j.err # File to which STDERR will be written
-tools/dist_train.sh  configs/softgroup_apples_backbone_fold5.yaml 1
+tools/dist_train_size.sh  configs/softgroup_apples_size.yaml 1

@@ -64,7 +64,7 @@ class SoftGroupSize(nn.Module):
             self.cls_linear = nn.Linear(channels, instance_classes) # + 1
             self.mask_linear = MLP(channels, instance_classes, norm_fn=None, num_layers=2) # + 1
             self.iou_score_linear = nn.Linear(channels, instance_classes) # + 1
-            self.size_regression = MLP(channels, 1, norm_fn=norm_fn, num_layers=3) # Features from tiny U-net + raw coords
+            self.size_regression = MLP(channels + 4, 1, norm_fn=None, num_layers=3) # Features from tiny U-net + [mean, median, min, max]
 
         self.init_weights()
 
@@ -104,15 +104,11 @@ class SoftGroupSize(nn.Module):
                       semantic_labels, instance_labels, instance_pointnum, instance_cls,
                       pt_offset_labels, spatial_shape, instance_sizes, batch_size, **kwargs):
         losses = {}
-        # print('insrance clases init train', torch.unique(instance_cls))
         feats = torch.cat((feats, coords_float), 1)
         voxel_feats = voxelization(feats, p2v_map)
         input = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, batch_size)
         semantic_scores, pt_offsets, output_feats = self.forward_backbone(input, v2p_map)
-        sem_pred = semantic_scores.max(1)[1]
-        print('Semantic scores shape:', semantic_scores.shape, sem_pred.sum())
-        # print('insrance clases post semantic train', torch.unique(instance_cls))
-        # point wise losses
+
         point_wise_loss = self.point_wise_loss(semantic_scores, pt_offsets, semantic_labels,
                                                instance_labels, pt_offset_labels)
         losses.update(point_wise_loss)
@@ -122,7 +118,8 @@ class SoftGroupSize(nn.Module):
             proposals_idx, proposals_offset = self.forward_grouping(semantic_scores, pt_offsets,
                                                                     batch_idxs, coords_float,
                                                                     self.grouping_cfg)
-            # print('Number of proposals in train: ', proposals_offset.shape[0])
+
+            proposals_idx, proposals_offset = self.best_proposals(proposals_idx, proposals_offset)
             if proposals_offset.shape[0] > self.train_cfg.max_proposal_num:
                 proposals_offset = proposals_offset[:self.train_cfg.max_proposal_num + 1]
                 proposals_idx = proposals_idx[:proposals_offset[-1]]
@@ -134,11 +131,11 @@ class SoftGroupSize(nn.Module):
                 coords_float,
                 rand_quantize=True,
                 **self.instance_voxel_cfg)
+            
+            off_feats = self.get_offset_4feats(semantic_scores, proposals_offset, proposals_idx, pt_offsets)
             instance_batch_idxs, cls_scores, iou_scores, mask_scores, sizes = self.forward_instance(
-                inst_feats, inst_map, coords_float)
-            # print(f'inst_feats: {inst_feats.features}/{inst_feats.features.shape}, inst_map shape: {inst_map.shape}/{inst_map}, mask scores: {mask_scores[0]}/{mask_scores.shape}, coords_float: {coords_float.shape}')
-            # print('proposals_idx shape',proposals_idx.shape,proposals_idx[0], 'proposals_offset shape',proposals_offset.shape, 'prop -1', proposals_offset[-1])
-            # print('insrance clases pre instance loss train', torch.unique(instance_cls))
+                inst_feats, inst_map, off_feats)
+            
             instance_loss = self.instance_loss(cls_scores, mask_scores, iou_scores, proposals_idx,
                                                proposals_offset, instance_labels, instance_pointnum,
                                                instance_cls, instance_batch_idxs, instance_sizes, sizes)
@@ -146,6 +143,19 @@ class SoftGroupSize(nn.Module):
             # instance_loss['num_instances'] = torch.tensor(((cls_scores.size(0) * self.train_cfg.loos_per_instance)), requires_grad=True)
             losses.update(instance_loss)
         return self.parse_losses(losses)
+    
+    def get_offset_4feats(self, semantic_scores, proposals_offset, proposals_idx, pt_offsets):
+        '''Return 4 features obtained agregating the radius of each point: [Mean, Median, Min, Max]'''
+        off_feats = semantic_scores.new_full((len(proposals_offset) - 1, 4), 0, dtype=torch.float)
+        for i in range(len(off_feats)):
+            prop_off = proposals_offset[i]
+            prop_ind = proposals_idx[prop_off:(prop_off+self.test_cfg.min_npoint), 1].long()
+            radius = torch.linalg.norm(pt_offsets[prop_ind],dim=1)
+            off_feats[i, 0] = torch.mean(radius)
+            off_feats[i, 1] = torch.median(radius)
+            off_feats[i, 2] = torch.min(radius)
+            off_feats[i, 3] = torch.max(radius)
+        return off_feats
 
     def point_wise_loss(self, semantic_scores, pt_offsets, semantic_labels, instance_labels,
                         pt_offset_labels):
@@ -163,6 +173,47 @@ class SoftGroupSize(nn.Module):
                 pt_offsets[pos_inds], pt_offset_labels[pos_inds], reduction='sum') / pos_inds.sum()
         losses['offset_loss'] = offset_loss
         return losses
+
+
+    def size_error(self, proposals_idx, proposals_offset,
+                      instance_labels, instance_pointnum, instance_cls, instance_sizes, sizes):
+
+        proposals_idx = proposals_idx[:, 1].cuda()
+        proposals_offset = proposals_offset.cuda()
+
+        # cal iou of clustered instance
+        ious_on_cluster = get_mask_iou_on_cluster(proposals_idx, proposals_offset, instance_labels,
+                                                  instance_pointnum)
+
+        # filter out background instances
+        fg_inds = (instance_cls != self.ignore_label)
+        fg_ious_on_cluster = ious_on_cluster[:, fg_inds]
+
+        # assign proposal to gt idx. -1: negative, 0 -> num_gts - 1: positive
+        num_proposals = fg_ious_on_cluster.size(0)
+        num_gts = fg_ious_on_cluster.size(1)
+        assigned_gt_inds = fg_ious_on_cluster.new_full((num_proposals, ), -1, dtype=torch.long)
+
+        # overlap > thr on fg instances are positive samples
+        max_iou, argmax_iou = fg_ious_on_cluster.max(1)
+        pos_inds = max_iou >= self.train_cfg.pos_iou_thr
+        assigned_gt_inds[pos_inds] = argmax_iou[pos_inds]
+        
+        # allow low-quality proposals with best iou to be as positive sample
+        # in case pos_iou_thr is too high to achieve
+        match_low_quality = getattr(self.train_cfg, 'match_low_quality', False)
+        min_pos_thr = getattr(self.train_cfg, 'min_pos_thr', 0)
+        if match_low_quality:
+            gt_max_iou, gt_argmax_iou = fg_ious_on_cluster.max(0)
+            for i in range(num_gts):
+                if gt_max_iou[i] >= min_pos_thr:
+                    assigned_gt_inds[gt_argmax_iou[i]] = i
+        
+        #compute size loss
+        valid_objs = assigned_gt_inds[assigned_gt_inds >= 0]
+        size_loss = F.huber_loss(torch.ravel(sizes[assigned_gt_inds >= 0]), instance_sizes[valid_objs,1], reduction='sum')
+        
+        return size_loss
 
     @force_fp32(apply_to=('cls_scores', 'mask_scores', 'iou_scores'))
     def instance_loss(self, cls_scores, mask_scores, iou_scores, proposals_idx, proposals_offset,
@@ -236,7 +287,7 @@ class SoftGroupSize(nn.Module):
         
         #compute size loss
         valid_objs = assigned_gt_inds[assigned_gt_inds >= 0]
-        size_loss = F.l1_loss(torch.ravel(sizes[assigned_gt_inds >= 0]), instance_sizes[valid_objs,1], reduction='sum')
+        size_loss = F.l1_loss(torch.ravel(sizes[assigned_gt_inds >= 0]).float(), instance_sizes[valid_objs,1].float(), reduction='mean')
         losses['size_loss'] = size_loss
         
         return losses
@@ -253,7 +304,7 @@ class SoftGroupSize(nn.Module):
 
     @cuda_cast
     def forward_test(self, batch_idxs, voxel_coords, p2v_map, v2p_map, coords_float, feats,
-                     semantic_labels, instance_labels, pt_offset_labels, spatial_shape, instance_sizes, batch_size,
+                     semantic_labels, instance_labels, pt_offset_labels, spatial_shape, batch_size,
                      scan_ids, **kwargs):
         feats = torch.cat((feats, coords_float), 1)
         voxel_feats = voxelization(feats, p2v_map)
@@ -279,15 +330,19 @@ class SoftGroupSize(nn.Module):
             proposals_idx, proposals_offset = self.forward_grouping(semantic_scores, pt_offsets,
                                                                     batch_idxs, coords_float,
                                                                     self.grouping_cfg)
+            proposals_idx, proposals_offset = self.best_proposals(proposals_idx, proposals_offset)
             inst_feats, inst_map = self.clusters_voxelization(proposals_idx, proposals_offset,
                                                               output_feats, coords_float,
                                                               **self.instance_voxel_cfg)
             # print(inst_feats, inst_map)
-            _, cls_scores, iou_scores, mask_scores, sizes = self.forward_instance(inst_feats, inst_map, coords_float)
+            off_feats = self.get_offset_4feats(semantic_scores, proposals_offset, proposals_idx, pt_offsets)
+            _, cls_scores, iou_scores, mask_scores, sizes = self.forward_instance(inst_feats, inst_map, off_feats)
             pred_instances = self.get_instances(scan_ids[0], proposals_idx, semantic_scores,
                                                 cls_scores, iou_scores, mask_scores, sizes)
             gt_instances = self.get_gt_instances(semantic_labels, instance_labels)
-            ret.update(dict(pred_instances=pred_instances, gt_instances=gt_instances, pred_sizes=sizes, gt_sizes=instance_sizes))
+            # size_regression_err = self.size_error(proposals_idx, proposals_offset,
+            #           instance_labels, instance_pointnum, instance_cls, instance_sizes, sizes)
+            ret.update(dict(pred_instances=pred_instances, gt_instances=gt_instances))
         return ret
 
     def forward_backbone(self, input, input_map, x4_split=False):
@@ -383,7 +438,7 @@ class SoftGroupSize(nn.Module):
             proposals_offset = torch.cat(proposals_offset_list)
         return proposals_idx, proposals_offset
 
-    def forward_instance(self, inst_feats, inst_map, coords_float):
+    def forward_instance(self, inst_feats, inst_map, pt_offsets):
         feats = self.tiny_unet(inst_feats)
         feats = self.tiny_unet_outputlayer(feats)
 
@@ -396,8 +451,8 @@ class SoftGroupSize(nn.Module):
         feats = self.global_pool(feats)
         cls_scores = self.cls_linear(feats)
         iou_scores = self.iou_score_linear(feats)
-        # coords_and_feat = torch.hstack()
-        regression_size = self.size_regression(feats)
+        coords_and_feat = torch.hstack((feats,pt_offsets))
+        regression_size = self.size_regression(coords_and_feat)
 
         return instance_batch_idxs, cls_scores, iou_scores, mask_scores, regression_size
 
@@ -462,7 +517,7 @@ class SoftGroupSize(nn.Module):
         for i in range(cls_pred.shape[0]):
             pred = {}
             pred['scan_id'] = scan_id
-            pred['size'] = sizes[i]
+            pred['size'] = sizes[i][0]
             pred['label_id'] = cls_pred[i]
             pred['conf'] = score_pred[i]
             # rle encode mask to save memory
@@ -551,3 +606,15 @@ class SoftGroupSize(nn.Module):
         x_pool_expand = x_pool[indices.long()]
         x.features = torch.cat((x.features, x_pool_expand), dim=1)
         return x
+    
+    def best_proposals(self,prop_idx, prop_off):
+        ids, count = torch.unique(prop_idx[:,0], return_counts=True)
+        preserve = count[count >= self.test_cfg.min_npoint]
+        remove_instances = torch.any(torch.stack([torch.eq(prop_idx, elem).logical_or_(torch.eq(prop_idx, elem)) for elem in ids[count >= self.test_cfg.min_npoint]], dim=0), dim = 0)
+        prop_idx = prop_idx[remove_instances[:,0]]
+        new_labels = np.concatenate([[ind]*preserve[ind] for ind in range(len(preserve))]).ravel()
+        prop_idx[:,0] = torch.from_numpy(new_labels)
+        offset = torch.cumsum(preserve, dim=0)
+        offset = torch.cat([torch.tensor([0]), offset], dim=0).type(torch.int32)
+        assert prop_idx.shape[0] == offset[-1]
+        return prop_idx, offset

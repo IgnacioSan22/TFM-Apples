@@ -33,6 +33,7 @@ class ScanNetEval(object):
         else:
             self.eval_class_labels = ['class_agnostic']
 
+
     def evaluate_matches(self, matches):
         ious = self.ious
         min_region_sizes = [self.min_region_sizes[0]]
@@ -222,7 +223,7 @@ class ScanNetEval(object):
             avg_dict['classes'][label_name]['rc25%'] = np.average(rcs[d_inf, li, o25])
         return avg_dict
 
-    def assign_instances_for_scan(self, preds, gts, gt_sizes=None):
+    def assign_instances_for_scan(self, preds, gts):
         """get gt instances, only consider the valid class labels even in class
         agnostic setting."""
         gt_instances = get_instances(gts, self.valid_class_ids, self.valid_class_labels,
@@ -293,8 +294,6 @@ class ScanNetEval(object):
                     gt_copy = gt_inst.copy()
                     pred_copy = pred_instance.copy()
                     gt_copy['intersection'] = intersection
-                    if gt_sizes is not None:
-                        gt_copy['szie'] = gt_sizes[gt_num]
                     pred_copy['intersection'] = intersection
                     iou = (
                         float(intersection) /
@@ -373,7 +372,35 @@ class ScanNetEval(object):
                 ap25 = avgs['classes'][class_name]['ap25%']
                 f.write(_SPLITTER.join([str(x) for x in [class_name, ap, ap50, ap25]]) + '\n')
 
-    def evaluateWithSize(self, pred_list, gt_list, gt_sizes=None):
+    def evaluate_size(self,matches, gt_sizes, classes):
+        errors = []
+        sizes_dict = dict([(int(sz.tolist()[0]), sz.tolist()[1]) for sz in gt_sizes])
+        # print(sizes_dict)
+        for cls in classes:
+            accum_error = 0
+            objs = 0
+            for m in matches:
+                for gt in matches[m]['gt'][cls]:
+                    gt_id = gt['instance_id'] % 1000
+                    if gt_id in sizes_dict:
+                        gt_size = sizes_dict[gt_id]
+                        if len(gt['matched_pred']) == 0:
+                            continue
+                        elif len(gt['matched_pred']) == 1:
+                            objs += 1
+                            accum_error += abs(gt['matched_pred'][0]['size'] - gt_size)
+                        else:
+                            best_pred, best_iou = None, 0
+                            for pred in gt['matched_pred']:
+                                if best_iou < pred['iou']:
+                                    best_iou = pred['iou']
+                                    best_pred = deepcopy(pred)
+                            objs += 1
+                            accum_error += abs(best_pred['size'] - gt_size)
+            errors.append((cls, accum_error / objs))
+        return errors
+
+    def evaluateWithSize(self, pred_list, gt_list, gt_sizes, classes):
         """
         Args:
             pred_list:
@@ -388,7 +415,7 @@ class ScanNetEval(object):
             gt_size:  diameter value of the GT instances in mm
         """
         pool = mp.Pool()
-        results = pool.starmap(self.assign_instances_for_scan, zip(pred_list, gt_list, gt_sizes))
+        results = pool.starmap(self.assign_instances_for_scan, zip(pred_list, gt_list))
         pool.close()
         pool.join()
 
@@ -400,11 +427,13 @@ class ScanNetEval(object):
             matches[matches_key]['pred'] = pred2gt
         ap_scores, rc_scores = self.evaluate_matches(matches)
         avgs = self.compute_averages(ap_scores, rc_scores)
-
+        
+        errors = self.evaluate_size(matches, gt_sizes, classes)
+        for error in errors:
+            print(f'Average size estimation error for {error[0]}: {error[1]}')
         # print
         self.print_results(avgs)
         return avgs
-    
     
     def evaluate(self, pred_list, gt_list):
         """
