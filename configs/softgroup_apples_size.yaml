@@ -17,23 +17,25 @@ model:
     scale: 50
     spatial_shape: 7
   train_cfg:
+    size_feats: 3
+    full_feats_size: True
     max_proposal_num: 500
     pos_iou_thr: 0.5
   test_cfg:
     x4_split: True
     cls_score_thr: 0.001
     mask_score_thr: -0.5
-    min_npoint: 250
-  # fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
-  fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear',
-                  'tiny_unet', 'cls_linear', 'mask_linear', 'iou_score_linear']
+    min_npoint: 500
+  fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear']
+  # fixed_modules: ['input_conv', 'unet', 'output_layer', 'semantic_linear', 'offset_linear',
+  #                 'tiny_unet', 'cls_linear', 'mask_linear', 'iou_score_linear']
   # fixed_modules: []
 
 data:
   train:
     type: 'apples_size'
-    data_root: 'dataset/applesTFM/train_overfit'
-    size_path: 'dataset/applesTFM/all_apples_train.csv'
+    data_root: 'dataset/applesTFM/train'
+    size_path: 'dataset/applesTFM/all_apples_final.csv'
     prefix: 'tree'
     suffix: '_segmented.las'
     repeat: 8
@@ -46,7 +48,7 @@ data:
   test:
     type: 'apples_size'
     data_root: 'dataset/applesTFM/test'
-    size_path: 'dataset/applesTFM/all_apples_test.csv'
+    size_path: 'dataset/applesTFM/all_apples_final.csv'
     prefix: 'tree'
     suffix: '_segmented.las'
     training: False
@@ -81,5 +83,5 @@ save_freq: 10
 pretrain: ''
 # pretrain: './hais_ckpt_spconv2.pth'
 pretrain: './work_dirs/instance/FrzPtr77_2outs_radius0004_lr001_Adam_scr05_sclInst50_shapeIns7/best_model.pth'
-# work_dir: 'work_dirs/instance_new/aux'
-work_dir: 'work_dirs/size/freezeall_inst_50_7_scr05_NonormFn_redmean_l1loss_Adam001'
+# work_dir: 'work_dirs/size/aux_full'
+work_dir: 'work_dirs/size/freezeSem_3coordsFeats_PointNet_minP500_redmean_smoothl1loss_Adam001'

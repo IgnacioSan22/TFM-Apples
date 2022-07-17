@@ -10,7 +10,7 @@ from ..ops import (ballquery_batch_p, bfs_cluster, get_mask_iou_on_cluster, get_
                    get_mask_label, global_avg_pool, sec_max, sec_min, voxelization,
                    voxelization_idx)
 from ..util import cuda_cast, force_fp32, rle_encode
-from .blocks import MLP, ResidualBlock, UBlock
+from .blocks import MLP, ResidualBlock, SizeNet, UBlock, SizeMLP
 
 
 class SoftGroupSize(nn.Module):
@@ -64,7 +64,12 @@ class SoftGroupSize(nn.Module):
             self.cls_linear = nn.Linear(channels, instance_classes) # + 1
             self.mask_linear = MLP(channels, instance_classes, norm_fn=None, num_layers=2) # + 1
             self.iou_score_linear = nn.Linear(channels, instance_classes) # + 1
-            self.size_regression = MLP(channels + 4, 1, norm_fn=None, num_layers=3) # Features from tiny U-net + [mean, median, min, max]
+            if self.train_cfg.full_feats_size:
+                self.size_regression = SizeNet(self.train_cfg.size_feats)
+            else:    
+                self.size_regression = MLP(self.train_cfg.size_feats, 1, norm_fn=None, num_layers=2) # Features from tiny U-net + [mean, median, min, max]
+            # inputSize = channels + 4
+            # self.size_regression = SizeMLP([inputSize, inputSize*2, 1], norm_fn=None, num_layers=2) # Features from tiny U-net + [mean, median, min, max]
 
         self.init_weights()
 
@@ -108,7 +113,7 @@ class SoftGroupSize(nn.Module):
         voxel_feats = voxelization(feats, p2v_map)
         input = spconv.SparseConvTensor(voxel_feats, voxel_coords.int(), spatial_shape, batch_size)
         semantic_scores, pt_offsets, output_feats = self.forward_backbone(input, v2p_map)
-
+        # print('Output features big Unet:', output_feats.shape, semantic_scores.shape)
         point_wise_loss = self.point_wise_loss(semantic_scores, pt_offsets, semantic_labels,
                                                instance_labels, pt_offset_labels)
         losses.update(point_wise_loss)
@@ -120,6 +125,7 @@ class SoftGroupSize(nn.Module):
                                                                     self.grouping_cfg)
 
             proposals_idx, proposals_offset = self.best_proposals(proposals_idx, proposals_offset)
+            # print('proposal idx shape', proposals_idx.shape)
             if proposals_offset.shape[0] > self.train_cfg.max_proposal_num:
                 proposals_offset = proposals_offset[:self.train_cfg.max_proposal_num + 1]
                 proposals_idx = proposals_idx[:proposals_offset[-1]]
@@ -132,9 +138,13 @@ class SoftGroupSize(nn.Module):
                 rand_quantize=True,
                 **self.instance_voxel_cfg)
             
-            off_feats = self.get_offset_4feats(semantic_scores, proposals_offset, proposals_idx, pt_offsets)
+            if self.train_cfg.full_feats_size:
+                off_feats = self.get_offset_full_feats(semantic_scores, proposals_offset, coords_float, proposals_idx, pt_offsets)
+            else:
+                off_feats = self.get_offset_4feats(semantic_scores, proposals_offset, proposals_idx, pt_offsets)
+                
             instance_batch_idxs, cls_scores, iou_scores, mask_scores, sizes = self.forward_instance(
-                inst_feats, inst_map, off_feats)
+                inst_feats, inst_map, off_feats, proposals_offset)
             
             instance_loss = self.instance_loss(cls_scores, mask_scores, iou_scores, proposals_idx,
                                                proposals_offset, instance_labels, instance_pointnum,
@@ -155,6 +165,17 @@ class SoftGroupSize(nn.Module):
             off_feats[i, 1] = torch.median(radius)
             off_feats[i, 2] = torch.min(radius)
             off_feats[i, 3] = torch.max(radius)
+        return off_feats
+    
+    
+    def get_offset_full_feats(self, semantic_scores, proposals_offset, coords_float, proposals_idx, pt_offsets):
+        off_feats = semantic_scores.new_full((len(proposals_offset) - 1, self.test_cfg.min_npoint, 3), 0, dtype=torch.float)
+        for i in range(len(off_feats)):
+            prop_off = proposals_offset[i]
+            prop_ind = proposals_idx[prop_off:(prop_off+self.test_cfg.min_npoint), 1].long()
+            # radius = torch.linalg.norm(pt_offsets[prop_ind],dim=1)
+            # off_feats[i, :, 0] = radius
+            off_feats[i, :, 0:3] = coords_float[prop_ind]
         return off_feats
 
     def point_wise_loss(self, semantic_scores, pt_offsets, semantic_labels, instance_labels,
@@ -287,7 +308,7 @@ class SoftGroupSize(nn.Module):
         
         #compute size loss
         valid_objs = assigned_gt_inds[assigned_gt_inds >= 0]
-        size_loss = F.l1_loss(torch.ravel(sizes[assigned_gt_inds >= 0]).float(), instance_sizes[valid_objs,1].float(), reduction='mean')
+        size_loss = F.smooth_l1_loss(torch.ravel(sizes[assigned_gt_inds >= 0]).float(), instance_sizes[valid_objs,1].float(), reduction='mean')
         losses['size_loss'] = size_loss
         
         return losses
@@ -335,8 +356,14 @@ class SoftGroupSize(nn.Module):
                                                               output_feats, coords_float,
                                                               **self.instance_voxel_cfg)
             # print(inst_feats, inst_map)
-            off_feats = self.get_offset_4feats(semantic_scores, proposals_offset, proposals_idx, pt_offsets)
-            _, cls_scores, iou_scores, mask_scores, sizes = self.forward_instance(inst_feats, inst_map, off_feats)
+            if self.train_cfg.full_feats_size:
+                off_feats = self.get_offset_full_feats(semantic_scores, proposals_offset, coords_float, proposals_idx, pt_offsets)
+            else:
+                off_feats = self.get_offset_4feats(semantic_scores, proposals_offset, proposals_idx, pt_offsets)
+                
+            _, cls_scores, iou_scores, mask_scores, sizes = self.forward_instance(
+                inst_feats, inst_map, off_feats, proposals_offset)
+            
             pred_instances = self.get_instances(scan_ids[0], proposals_idx, semantic_scores,
                                                 cls_scores, iou_scores, mask_scores, sizes)
             gt_instances = self.get_gt_instances(semantic_labels, instance_labels)
@@ -438,7 +465,7 @@ class SoftGroupSize(nn.Module):
             proposals_offset = torch.cat(proposals_offset_list)
         return proposals_idx, proposals_offset
 
-    def forward_instance(self, inst_feats, inst_map, pt_offsets):
+    def forward_instance(self, inst_feats, inst_map, pt_offsets, proposals_off):
         feats = self.tiny_unet(inst_feats)
         feats = self.tiny_unet_outputlayer(feats)
 
@@ -447,11 +474,23 @@ class SoftGroupSize(nn.Module):
         mask_scores = mask_scores[inst_map.long()]
         instance_batch_idxs = feats.indices[:, 0][inst_map.long()]
 
-        # predict instance cls and iou scores
-        feats = self.global_pool(feats)
-        cls_scores = self.cls_linear(feats)
-        iou_scores = self.iou_score_linear(feats)
-        coords_and_feat = torch.hstack((feats,pt_offsets))
+        featsPooling = self.global_pool(feats)
+        cls_scores = self.cls_linear(featsPooling)
+        iou_scores = self.iou_score_linear(featsPooling)
+        if self.train_cfg.full_feats_size:
+            if self.train_cfg.size_feats > 32:
+                coords_and_feat = proposals_off.new_full((len(proposals_off) - 1, self.test_cfg.min_npoint, self.train_cfg.size_feats), 0, dtype=torch.float)
+                mapped_feats = feats.features[inst_map.long()]
+                for i in range(len(proposals_off) - 1):
+                    coords_and_feat[i,:,0:32] = mapped_feats[proposals_off[i].long():(proposals_off[i]+self.test_cfg.min_npoint).long(),:]
+                    coords_and_feat[i,:,32:self.train_cfg.size_feats] = pt_offsets[i]
+            else:
+                coords_and_feat = pt_offsets
+            coords_and_feat = coords_and_feat.permute(0,2,1).cuda()
+            # print('shape de cords and feat', coords_and_feat.shape)
+            # coords_and_feat = torch.hstack((aux.cuda(),pt_offsets))
+        else:
+            coords_and_feat = torch.hstack((featsPooling,pt_offsets))
         regression_size = self.size_regression(coords_and_feat)
 
         return instance_batch_idxs, cls_scores, iou_scores, mask_scores, regression_size

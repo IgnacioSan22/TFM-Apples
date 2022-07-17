@@ -25,7 +25,7 @@ class ApplesSizeDataSet(CustomDataset):
             # print(header)
             self.size_data[0] = -1
             for elem in csvreader:
-                self.size_data[int(elem[5])] = float(elem[2])
+                self.size_data[int(elem[1])] = float(elem[2])
                 
     def getCroppedInstLabel(self, instance_label, valid_idxs, instance_sizes):
         instance_label = instance_label[valid_idxs]
