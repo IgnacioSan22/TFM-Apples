@@ -8,14 +8,14 @@ model:
   ignore_label: -100
   grouping_cfg:
     score_thr: 0.5
-    radius: 0.004
+    radius: 0.006
     mean_active: 60
     class_numpoint_mean: [-1., -1.]
     npoint_thr: 0.1  # absolute if class_numpoint == -1, relative if class_numpoint != -1
     ignore_classes: [0]
   instance_voxel_cfg:
     scale: 50
-    spatial_shape: 7
+    spatial_shape: 10
   train_cfg:
     size_feats: 35
     full_feats_size: False
@@ -41,19 +41,19 @@ data:
     repeat: 6
     training: True
     voxel_cfg:
-      scale: 200
+      scale: 100
       spatial_shape: [64, 256]
       max_npoint: 300000
       min_npoint: 3000
   test:
     type: 'apples_size'
-    data_root: 'dataset/applesTFM/test'
+    data_root: 'dataset/applesTFM/test_all'
     size_path: 'dataset/applesTFM/all_apples_final.csv'
     prefix: 'tree'
     suffix: '_segmented.las'
     training: False
     voxel_cfg:
-      scale: 200
+      scale: 100
       spatial_shape: [64, 256]
       max_npoint: 300000
       min_npoint: 3000
@@ -84,4 +84,4 @@ pretrain: ''
 # pretrain: './hais_ckpt_spconv2.pth'
 pretrain: './work_dirs/instance/FrzPtr77_2outs_radius0004_lr001_Adam_scr05_sclInst50_shapeIns7/best_model.pth'
 # work_dir: 'work_dirs/size/aux_full'
-work_dir: 'work_dirs/all/ptr90_fullFeats_PointNet_minP500_redsum_smoothl1loss_Adam0005'
+work_dir: 'work_dirs/all/ptr90_inst50_10_sem100_Adam0005'

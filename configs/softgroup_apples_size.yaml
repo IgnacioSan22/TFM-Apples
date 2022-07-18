@@ -17,7 +17,7 @@ model:
     scale: 50
     spatial_shape: 7
   train_cfg:
-    size_feats: 3
+    size_feats: 35
     full_feats_size: True
     max_proposal_num: 500
     pos_iou_thr: 0.5
@@ -68,8 +68,8 @@ dataloader:
     num_workers: 1
 
 optimizer:
-  type: 'Adam'
-  lr: 0.01
+  type: 'RMSprop'
+  lr: 0.001
 
 save_cfg:
   semantic: False
@@ -84,4 +84,4 @@ pretrain: ''
 # pretrain: './hais_ckpt_spconv2.pth'
 pretrain: './work_dirs/instance/FrzPtr77_2outs_radius0004_lr001_Adam_scr05_sclInst50_shapeIns7/best_model.pth'
 # work_dir: 'work_dirs/size/aux_full'
-work_dir: 'work_dirs/size/freezeSem_3coordsFeats_PointNet_minP500_redmean_smoothl1loss_Adam001'
+work_dir: 'work_dirs/size/freezeSem_fullFeats_PointNet_minP500_redsum_mseloss_RMSprop0001'

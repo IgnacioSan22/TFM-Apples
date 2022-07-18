@@ -202,7 +202,7 @@ def main():
         train(epoch, model, optimizer, scaler, train_loader, cfg, logger, writer)
         # if not args.skip_validate and (is_multiple(epoch, 2)):
         miou, evalAp = validate(epoch, model, val_loader, cfg, logger, writer)
-        if (not cfg.model.semantic_only and evalAp > bestAp) or (cfg.model.semantic_only and miou > bestMIOU):
+        if (not cfg.model.semantic_only and evalAp >= bestAp) or (cfg.model.semantic_only and miou >= bestMIOU):
             bestAp = evalAp
             bestMIOU = miou
             checkpoint_save_best(epoch,model,optimizer, cfg.work_dir)

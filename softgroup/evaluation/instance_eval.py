@@ -8,6 +8,8 @@ import numpy as np
 
 from ..util import rle_decode
 from .instance_eval_util import get_instances
+from sklearn.metrics import r2_score
+import matplotlib.pyplot as plt
 
 
 class ScanNetEval(object):
@@ -372,11 +374,12 @@ class ScanNetEval(object):
                 ap25 = avgs['classes'][class_name]['ap25%']
                 f.write(_SPLITTER.join([str(x) for x in [class_name, ap, ap50, ap25]]) + '\n')
 
-    def evaluate_size(self,matches, gt_sizes, classes):
-        errors = []
+    def evaluate_size(self,matches, gt_sizes, classes, plot=False):
+        errors, rsquared = [], []
         sizes_dict = dict([(int(sz.tolist()[0]), sz.tolist()[1]) for sz in gt_sizes])
         # print(sizes_dict)
         for cls in classes:
+            actual, prediction = [], []
             accum_error = 0
             objs = 0
             for m in matches:
@@ -388,6 +391,8 @@ class ScanNetEval(object):
                             continue
                         elif len(gt['matched_pred']) == 1:
                             objs += 1
+                            actual.append(gt_size)
+                            prediction.append(gt['matched_pred'][0]['size'])
                             accum_error += abs(gt['matched_pred'][0]['size'] - gt_size)
                         else:
                             best_pred, best_iou = None, 0
@@ -396,11 +401,23 @@ class ScanNetEval(object):
                                     best_iou = pred['iou']
                                     best_pred = deepcopy(pred)
                             objs += 1
+                            actual.append(gt_size)
+                            prediction.append(best_pred['size'])
                             accum_error += abs(best_pred['size'] - gt_size)
+                            
             errors.append((cls, accum_error / objs))
-        return errors
+            rsquared.append(r2_score(actual,prediction))
+            
+            if plot:
+                plt.figure(figsize=(4, 3))
+                ax = plt.axes()
+                ax.scatter(actual,prediction)
+                plt.axhline(y=np.mean(actual), color='r', linestyle='-')
+                plt.title(f'R2 coeff: {r2_score(actual,prediction):.3f}')
+                plt.savefig(f'size_correlation_{cls}.png')
+        return errors, rsquared
 
-    def evaluateWithSize(self, pred_list, gt_list, gt_sizes, classes):
+    def evaluateWithSize(self, pred_list, gt_list, gt_sizes, classes, plot_size=False):
         """
         Args:
             pred_list:
@@ -428,9 +445,9 @@ class ScanNetEval(object):
         ap_scores, rc_scores = self.evaluate_matches(matches)
         avgs = self.compute_averages(ap_scores, rc_scores)
         
-        errors = self.evaluate_size(matches, gt_sizes, classes)
-        for error in errors:
-            print(f'Average size estimation error for {error[0]}: {error[1]}')
+        errors, rsquared = self.evaluate_size(matches, gt_sizes, classes, plot_size)
+        for i, error in enumerate(errors):
+            print(f'Average size estimation error for {error[0]}: {error[1]} (R-squared {rsquared[i]:.4f})')
         # print
         self.print_results(avgs)
         return avgs

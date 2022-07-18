@@ -1,3 +1,5 @@
 srun --mem=16G --gres=gpu:1  -p gpi.develop --time=100  tools/dist_test.sh ./work_dirs/instance/FrzPtr77_2outs_radius0004_lr001_Adam_scr05_sclInst50_shapeIns7/softgroup_apples_backbone_fold5.yaml ./work_dirs/instance/FrzPtr77_2outs_radius0004_lr001_Adam_scr05_sclInst50_shapeIns7/best_model.pth prediction/instance_90
 
+srun --mem=16G --gres=gpu:1  -p gpi.develop --time=100  tools/dist_test_size.sh ./work_dirs/size/freezeSem_35Feats_PointNet_minP500_redmean_smoothl1loss_Adam00001/softgroup_apples_size.yaml ./work_dirs/size/freezeSem_35Feats_PointNet_minP500_redmean_smoothl1loss_Adam00001/best_model.pth prediction/size_aux
+
 srun --mem=16G --gres=gpu:1  -p gpi.develop --time=100 tools/dist_visualization.sh

@@ -308,7 +308,7 @@ class SoftGroupSize(nn.Module):
         
         #compute size loss
         valid_objs = assigned_gt_inds[assigned_gt_inds >= 0]
-        size_loss = F.smooth_l1_loss(torch.ravel(sizes[assigned_gt_inds >= 0]).float(), instance_sizes[valid_objs,1].float(), reduction='mean')
+        size_loss = F.mse_loss(torch.ravel(sizes[assigned_gt_inds >= 0]).float(), instance_sizes[valid_objs,1].float(), reduction='sum')
         losses['size_loss'] = size_loss
         
         return losses

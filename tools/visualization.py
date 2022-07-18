@@ -243,7 +243,7 @@ def get_coords_color(opt):
                 instance = np.zeros((int(ins_pointnum[i]), 6))
                 instance[:,:3] = xyz[mask == 1]
                 instance[:,3:] = rgb[mask == 1]
-                np.savetxt(f'./instances/instance_{i}_{SEMANTIC_IDX2NAME[int(masks[i][1])]}.txt', instance, delimiter=' ')
+                np.savetxt(f'./instances/{opt.room_name}_instance_{i}_{SEMANTIC_IDX2NAME[int(masks[i][1])]}.txt', instance, delimiter=' ')
             
             
         sort_idx = np.argsort(ins_pointnum)[::-1]
